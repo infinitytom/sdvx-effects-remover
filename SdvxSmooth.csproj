@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>SDVX特效精简-崩溃修正版</AssemblyName>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+  </PropertyGroup>
+  <ItemGroup><EmbeddedResource Include="EffectCatalog.json.gz" /><EmbeddedResource Include="LegacyEffectCatalog.json.gz" /><EmbeddedResource Include="UnsafeEffectCatalog.json.gz" /></ItemGroup>
+</Project>
