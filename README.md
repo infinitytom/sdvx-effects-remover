@@ -2,11 +2,21 @@
 
 Windows 图形工具：通过可恢复的 IFS LayeredFS 覆盖，减少指定 SDVX 版本的背景和装饰光效，同时保留按键命中与基本读谱信息。
 
-### v0.4.1 · 深黑底色修复（覆盖更新）
+### v0.4.2 · 真实资源路径兼容与机台装饰精简（覆盖更新）
+
+**0.4.0 和 0.4.1 均收到实机背景未变深黑的反馈。** 0.4.1 视频中仍可见动态舞台、绿色顶框和底部机台；日志虽然列出了覆盖目录，却还出现属性读取警告，不能据此认定资源已成功替换。
+
+0.4.2 除原可读名称外，同时按原 IFS 内的真实哈希文件名生成几何和 AFP 覆盖，绕过对 Hook 名称索引解析的依赖。已逐项核对 22683 条真实路径，保留 0.4.1 的底色修复。此外新增 71 个独立装饰几何，隐藏顶部外框和底部机台外壳，随「隐藏动态装饰」共同控制，保留判定线、命中和读谱信息。
+
+同一预览发布页与 ZIP 下载链接用于覆盖更新。重新下载后确认窗口标题为 **0.4.2**，退出游戏和启动器，读取旧模式，再点击「应用当前选择」。同一选择下也会补齐旧版缺少的哈希路径和机台覆盖；被手工修改的文件会阻止升级。
+
+**这仍是需要实机复测的兼容修复。** 路径、生成和恢复验证不能代替运行时加载或最终画面的确认。
+
+### 0.4.1 的底色修复记录
 
 **上一版 v0.4.0 已收到用户实测反馈：背景没有变成深黑。** 原来的纹理生成测试只能证明覆盖文件有效，不能证明最终画面。检查资源发现，背景动画还存在独立的 AFP 底色，例如 dome 的普通/通关背景分别带有灰色底色；上一版没有处理它们。
 
-0.4.1 补充 300 个已启用底色的背景 AFP 覆盖，仅将 RGB 改为黑色，保留原透明度、标志、时间线和 BSI。不会给原本透明的粒子动画添加不透明背景。**修复构建仍需要实机复测，不能把静态校验当成效果确认。** 同一预览发布页和 ZIP 下载链接已用于替换发布；下载后检查窗口标题包含 `0.4.1`。
+0.4.1 补充 300 个已启用底色的背景 AFP 覆盖，仅将 RGB 改为黑色，保留原透明度、标志、时间线和 BSI。不会给原本透明的粒子动画添加不透明背景。**后续实机反馈确认，这项处理单独不足以解决背景问题。**
 
 已经启用旧版「USC 深黑」的用户：退出游戏和启动器，打开修复版读取模式，再点击「应用当前选择」。修复版会识别缺少的动画底色覆盖，即使选择未变化也会补齐，不再直接提示“模式没有变化”。
 
@@ -39,7 +49,7 @@ Windows 图形工具：通过可恢复的 IFS LayeredFS 覆盖，减少指定 SD
 | 深黑背景 | 4302 张纯黑背景纹理，以及 300 个背景 AFP 已有底色的 RGB 修复 |
 | 旋钮尘粒 | 指定旋钮尘粒动画 |
 | 轨道反光 | 指定轨道反光与 HUD 泛光 |
-| 额外装饰 | 旋钮周边光效、连击光束、HUD 动态装饰 |
+| 额外装饰 | 旋钮周边光效、连击光束、HUD 动态装饰，以及顶部外框和底部机台外壳 |
 | 判定显示 | 可识别的 CRITICAL/ERROR、EARLY/LATE、CHAIN 字样及通关、失败、PUC/UC 演出 |
 
 保留按键命中闪光、长按反馈、按键光柱、音符、旋钮定位、血条、分数和连击数字。隐藏判定显示不改变实际判定逻辑、成绩或通关结果，可独立恢复。镜头倾斜、旋转、谱面演出指令、Live2D 和动画脚本计算不在本版处理范围。
@@ -56,7 +66,7 @@ Windows 图形工具：通过可恢复的 IFS LayeredFS 覆盖，减少指定 SD
 
 ## 备份与恢复
 
-原始游戏 IFS、音频、谱面和 DLL 不会被改写。六个开关管理的覆盖放在 `contents/data_mods/zzzz_sdvx_smooth_*`；其中深黑开关共同控制 `black` 纹理组和新增的 `backdrop` 动画底色组。停用后移至游戏目录 `.sdvx-smooth/effects-v2/disabled`，历史记录位于同目录的 `history`。旧版备份保留在 `effects-v1`，请勿手动复制回游戏。
+原始游戏 IFS、音频、谱面和 DLL 不会被改写。六个开关管理的覆盖放在 `contents/data_mods/zzzz_sdvx_smooth_*`；深黑开关共同控制 `black` 纹理组和 `backdrop` 底色组，装饰开关共同控制 `extra` 与 `frame` 机台外框组。几何和 AFP 同时保存可读名称及真实哈希路径副本。停用后移至游戏目录 `.sdvx-smooth/effects-v2/disabled`，历史记录位于同目录的 `history`。旧版备份保留在 `effects-v1`，请勿手动复制回游戏。
 
 启动设置修改前备份至 `.sdvx-smooth/backups`，支持完整恢复；若同一配置后来被其他程序修改，工具拒绝直接覆盖。更新游戏或遇到异常时先恢复原版，保留本地日志供排查。日志可能包含个人信息，请先脱敏再提交 Issue。
 
@@ -65,10 +75,10 @@ Windows 图形工具：通过可恢复的 IFS LayeredFS 覆盖，减少指定 SD
 需要 Windows 与 .NET 8 SDK：
 
 ```powershell
-dotnet publish -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -p:DebugType=None -o dist/usc-v0.4.1
-$app = Get-Item 'dist/usc-v0.4.1/SDVX特效精简-USC深黑.exe'
+dotnet publish -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -p:DebugType=None -o dist/usc-v0.4.2
+$app = Get-Item 'dist/usc-v0.4.2/SDVX特效精简-USC深黑.exe'
 $p = Start-Process -FilePath $app.FullName -ArgumentList '--self-test' -Wait -PassThru
-Get-Content dist/usc-v0.4.1/self-test.txt
+Get-Content dist/usc-v0.4.2/self-test.txt
 if ($p.ExitCode -ne 0) { throw 'Tests failed' }
 ```
 
@@ -81,6 +91,7 @@ py -m venv .venv
 .venv/Scripts/python -m pip install -r tools/requirements.txt
 .venv/Scripts/python tools/build_effect_catalog.py --game-root 'X:\Games\LAZY_KFC'
 .venv/Scripts/python tools/validate_background_fills.py --game-root 'X:\Games\LAZY_KFC'
+.venv/Scripts/python tools/validate_archive_paths.py --game-root 'X:\Games\LAZY_KFC'
 ```
 
 `LegacyEffectCatalog.json.gz` 和 `UnsafeEffectCatalog.json.gz` 仅用于识别、校验并停用历史覆盖。不要使用旧版生成算法。

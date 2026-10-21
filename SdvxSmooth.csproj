@@ -6,7 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AssemblyName>SDVX特效精简-USC深黑</AssemblyName>
-    <Version>0.4.1</Version>
+    <Version>0.4.2</Version>
     <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
   <ItemGroup><EmbeddedResource Include="EffectCatalog.json.gz" /><EmbeddedResource Include="LegacyEffectCatalog.json.gz" /><EmbeddedResource Include="UnsafeEffectCatalog.json.gz" /></ItemGroup>

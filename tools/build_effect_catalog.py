@@ -83,6 +83,7 @@ def add_background_fills(obj, package):
         container = package.relative_to(ROOT).with_suffix('').as_posix() + '_ifs'
         background_fills.append({'Source': source, 'Offset': f.ifs_data.offset + f.start,
             'Size': len(original), 'Output': f'{container}/afp/{name}', 'RgbOffsets': rgb_offsets,
+            'ArchiveOutput': f'{container}/afp/{f._packed_name}',
             'BeforeHash': hashlib.sha256(original).hexdigest().upper(),
             'AfterHash': hashlib.sha256(patched).hexdigest().upper()})
 
@@ -132,6 +133,8 @@ def add_package(path, group, accept):
             assert '/' not in f.name and '\\' not in f.name
             output = f'{container}/geo/{f.name}'
             # Native afpu_render_draw_geo requires the original render count (often exactly one).
+            if group == 'frame' and any(i['Output'] == output for i in items):
+                continue
             # Keep all structure and draw records; collapse only the 2D positions into a point.
             vertex_count = struct.unpack_from(endian+'H', original, 20)[0]
             vertex_offset = struct.unpack_from(endian+'I', original, 32)[0]
@@ -144,6 +147,7 @@ def add_package(path, group, accept):
             patched[vertex_offset:vertex_offset+vertex_count*8] = first_point * vertex_count
             items.append({'Group': group, 'Source': source, 'Offset': f.ifs_data.offset + f.start,
                           'Size': len(original), 'Output': output,
+                          'ArchiveOutput': f'{container}/geo/{f._packed_name}',
                           'BeforeHash': hashlib.sha256(original).hexdigest().upper(),
                           'AfterHash': hashlib.sha256(patched).hexdigest().upper()})
             stats[group] = stats.get(group, 0) + 1
@@ -201,6 +205,19 @@ for version in ('ver06', 'ver07'):
 add_package(ROOT/'graphics/ver06/game_effect.ifs', 'judgment', lambda name, tex:
             name.rsplit('_shape', 1)[0] in {'x_crifont', 'x_crifontS', 'x_ef_error'} or
             (bool(tex) and all(t in {'ef_crifont', 'ef_crifonts'} for t in tex)))
+
+# The reference USC view has no large cabinet shell or branded top cap.
+# Only independently textured decoration shapes are selected: score, gauge,
+# judgment line, button light/hold animations and knob cursors stay untouched.
+for version in ('ver06', 'ver07'):
+    cabinet = {'io_front_v', 'io_main_i_eeb', 'io_under'} | {
+        f'io_vol_{side}_{model}' for side in ('left', 'right') for model in ('i', 'ii', 'iii', 'iv', 'v')}
+    add_package(ROOT/f'graphics/{version}/game_nemsys.ifs', 'frame', lambda name, tex:
+                bool(tex) and all(t in cabinet for t in tex))
+    top = {'gamehud_top', 'gamehud_top_logo', 'bg_side_hud_top', 'hud_top_base',
+           'hud_top_base_hex', 'top_frame_right', 'sdvx6_logo_line_i_eeb', 'sdvx6_logo_white_i_eeb'}
+    add_package(ROOT/f'graphics/{version}/game_hud.ifs', 'frame', lambda name, tex:
+                bool(tex) and all(t in top for t in tex))
 
 assert len({i['Output'] for i in items}) == len(items)
 assert not protected_outputs.intersection(i['Output'] for i in items), 'A required hit/cursor resource was selected'

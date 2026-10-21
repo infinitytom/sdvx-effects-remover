@@ -32,14 +32,25 @@ static class EffectTests
         var catalog = new EffectCatalog { Version = 2, GameIdentifier = game.Identifier() };
         catalog.Sources.Add(new("graphics/fixture.ifs", Game.Hash(source), source.Length));
         foreach (string group in Effects.Groups.Where(g => g != "black" && g != "backdrop"))
-            catalog.Items.Add(new(group, "graphics/fixture.ifs", 100, geometry.Length, $"graphics/fixture_ifs/geo/{group}_shape5", Game.Hash(geometry), Game.Hash(Effects.StripGeometry(geometry))));
+            catalog.Items.Add(new(group, "graphics/fixture.ifs", 100, geometry.Length, $"graphics/fixture_ifs/geo/{group}_shape5", Game.Hash(geometry), Game.Hash(Effects.StripGeometry(geometry)),
+                "graphics/fixture_ifs/geo/" + Convert.ToHexString(MD5.HashData(System.Text.Encoding.UTF8.GetBytes(group + "_shape5"))).ToLowerInvariant()));
         catalog.BlackTextures.Add(new("graphics/fixture.ifs", "graphics/fixture_ifs/tex/background.png", 32, 18));
-        catalog.BackgroundFills.Add(new("graphics/fixture.ifs", 300, movie.Length, "graphics/fixture_ifs/afp/normal", rgbOffsets, Game.Hash(movie), Game.Hash(Effects.BlackenBackgroundFill(movie, rgbOffsets))));
+        catalog.BackgroundFills.Add(new("graphics/fixture.ifs", 300, movie.Length, "graphics/fixture_ifs/afp/normal", rgbOffsets, Game.Hash(movie), Game.Hash(Effects.BlackenBackgroundFill(movie, rgbOffsets)), "graphics/fixture_ifs/afp/fea087517c26fadd409bd4b9dc642555"));
         var engine = new Effects(game, catalog, () => { });
         var all = new EffectMode(true, true, true, true, true, true); var original = EffectMode.Original;
         Check(EffectMode.Usc.DeepBlack && EffectMode.Usc.Background && !EffectMode.Usc.Judgment, "USC preset must keep timing feedback and enable deep black");
         Check(engine.Read() == original, "fixture initially enabled");
         engine.Apply(all); Check(engine.Read() == all, "effects not enabled");
+        string aliasFile = Path.Combine(fixtureRoot, "contents/data_mods/zzzz_sdvx_smooth_background", catalog.Items[0].ArchiveOutput);
+        Check(File.ReadAllBytes(aliasFile).SequenceEqual(Effects.StripGeometry(geometry)), "direct archive hash override missing or corrupt");
+        File.Delete(aliasFile); Check(engine.NeedsResourcePathUpgrade(), "named-only install not detected");
+        source[0] = 1; File.WriteAllBytes(sourcePath, source);
+        Refuses(() => engine.Apply(all)); Check(!File.Exists(aliasFile), "alias upgrade bypassed original source validation");
+        source[0] = 0; File.WriteAllBytes(sourcePath, source);
+        engine.Apply(all); Check(File.Exists(aliasFile) && !engine.NeedsResourcePathUpgrade(), "same-mode alias upgrade failed");
+        File.AppendAllText(aliasFile, "external edit"); Refuses(() => engine.Apply(original));
+        Check(engine.Read() == all, "bad alias partially disabled mode"); File.WriteAllBytes(aliasFile, Effects.StripGeometry(geometry));
+        results.Add("PASS: direct IFS hash-name overrides generated; named-only installs repaired on same-mode apply; modified aliases refuse restore");
         string backdropFolder = Path.Combine(fixtureRoot, "contents/data_mods/zzzz_sdvx_smooth_backdrop");
         string movieOverride = Path.Combine(backdropFolder, catalog.BackgroundFills[0].Output);
         byte[] blackMovie = File.ReadAllBytes(movieOverride);
@@ -81,7 +92,7 @@ static class EffectTests
         results.Add("PASS: zero-draw-count regression refused; native draw count stays 1; only vertex positions change; overrides apply/restore with original data byte-exact");
         results.Add("PASS: judgment display toggles independently while background and other effects remain simplified");
         var legacy = new EffectCatalog { Version = catalog.Version, GameIdentifier = catalog.GameIdentifier, Sources = catalog.Sources, Items = catalog.Items.ToList() };
-        var retired = catalog.Items[1] with { Output = "graphics/fixture_ifs/geo/old_button_hit_shape5" };
+        var retired = catalog.Items[1] with { Output = "graphics/fixture_ifs/geo/old_button_hit_shape5", ArchiveOutput = "" };
         legacy.Items.Add(retired);
         string retiredPath = Path.Combine(fixtureRoot, "contents", "data_mods", "zzzz_sdvx_smooth_hit", retired.Output);
         File.WriteAllBytes(retiredPath, Effects.StripGeometry(geometry));
@@ -115,6 +126,8 @@ static class EffectTests
             Check(actual.BackgroundFills.Count > 0 && actual.BackgroundFills.All(f => f.Output.StartsWith("graphics/game_bg/", StringComparison.Ordinal) && f.Output.Contains("_ifs/afp/")), "AFP fills missing or targeting non-background resources");
             Check(actual.Items.Where(i => i.Group == "hit").All(i => Path.GetFileName(i.Output).StartsWith("efhg_dust_")), "button/hold feedback targeted");
             Check(actual.Items.All(i => !i.Source.EndsWith("/game_lane.ifs")), "keybeam package targeted");
+            Check(actual.Items.Any(i => i.Group == "frame" && i.Source.EndsWith("/game_nemsys.ifs")), "cabinet frame coverage missing");
+            Check(actual.Items.All(i => i.ArchiveOutput.Length > 0 && i.ArchiveOutput != i.Output), "native archive hash path missing");
             Check(actual.Items.Any(i => i.Group == "judgment" && i.Source.EndsWith("/hantei.ifs")), "judgment banners not covered");
             Check(actual.Items.Any(i => i.Group == "judgment" && i.Output.Contains("x_crifont")), "critical text not covered");
             var protectedOutputs = actual.ProtectedOutputs.ToHashSet();
@@ -135,7 +148,7 @@ static class EffectTests
                     int vertices = System.Buffers.Binary.BinaryPrimitives.ReadUInt16BigEndian(bytes.AsSpan(20, 2));
                     Check(bytes.AsSpan(0, offset).SequenceEqual(stripped.AsSpan(0, offset)) && bytes.AsSpan(offset + vertices * 8).SequenceEqual(stripped.AsSpan(offset + vertices * 8)), "geometry header, draw records or other stream modified");
                     Check(!item.Output.Contains("game_notes") && !item.Output.Contains("vol_cursor"), "protected geometry included");
-                    Check(!item.Output.Contains("hantei") || item.Group == "judgment", "judgment controlled by wrong group");
+                    Check(!item.Output.Contains("/hantei_ifs/") || item.Group == "judgment", "judgment banner container controlled by wrong group");
                     ++count;
                 }
                 foreach (var fill in actual.BackgroundFills.Where(f => f.Source == package.Path))

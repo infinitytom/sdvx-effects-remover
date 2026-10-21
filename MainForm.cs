@@ -16,7 +16,7 @@ sealed class MainForm : Form
     Game? game;
     public MainForm()
     {
-        Text = "SDVX Effects Remover · USC 深黑 0.4.1"; Font = new Font("Microsoft YaHei UI", 10);
+        Text = "SDVX Effects Remover · USC 深黑 0.4.2"; Font = new Font("Microsoft YaHei UI", 10);
         ClientSize = new Size(1060, 840); MinimumSize = new Size(1000, 820); StartPosition = FormStartPosition.CenterScreen;
         BackColor = Theme.Background; ForeColor = Theme.Text;
         var layout = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(24), ColumnCount = 1, RowCount = 10 };

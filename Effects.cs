@@ -7,9 +7,9 @@ using System.Xml.Linq;
 namespace SdvxSmooth;
 
 record EffectSource(string Path, string Sha256, long Size);
-record EffectItem(string Group, string Source, long Offset, int Size, string Output, string BeforeHash, string AfterHash);
+record EffectItem(string Group, string Source, long Offset, int Size, string Output, string BeforeHash, string AfterHash, string ArchiveOutput = "");
 record BlackTexture(string Source, string Output, int Width, int Height);
-record BackgroundFill(string Source, long Offset, int Size, string Output, int[] RgbOffsets, string BeforeHash, string AfterHash);
+record BackgroundFill(string Source, long Offset, int Size, string Output, int[] RgbOffsets, string BeforeHash, string AfterHash, string ArchiveOutput = "");
 sealed class EffectCatalog
 {
     public int Version { get; set; }
@@ -36,7 +36,7 @@ record EffectMode(bool Background, bool Hit, bool Lane, bool Extra = false, bool
 {
     public static EffectMode Usc => new(true, true, true, true, false, true);
     public static EffectMode Original => new(false, false, false);
-    public bool Enabled(string group) => group switch { "background" => Background, "hit" => Hit, "lane" => Lane, "extra" => Extra, "judgment" => Judgment, "black" or "backdrop" => DeepBlack, _ => throw new IOException("未知特效分组。") };
+    public bool Enabled(string group) => group switch { "background" => Background, "hit" => Hit, "lane" => Lane, "extra" or "frame" => Extra, "judgment" => Judgment, "black" or "backdrop" => DeepBlack, _ => throw new IOException("未知特效分组。") };
 }
 sealed class EffectTransaction
 {
@@ -48,8 +48,8 @@ sealed class EffectTransaction
 
 sealed class Effects
 {
-    public static readonly string[] Groups = { "background", "hit", "lane", "extra", "judgment", "black", "backdrop" };
-    public static string Title(string group) => group switch { "background" => "隐藏曲目背景绘制", "hit" => "减少旋钮尘粒（保留按键命中）", "lane" => "减少轨道反光和 HUD 泛光", "extra" => "隐藏旋钮周边光效、连击光束与 HUD 装饰", "judgment" => "隐藏判定文字及通关/失败演出", "black" => "深黑背景纹理", "backdrop" => "深黑背景动画底色", _ => group };
+    public static readonly string[] Groups = { "background", "hit", "lane", "extra", "judgment", "black", "backdrop", "frame" };
+    public static string Title(string group) => group switch { "background" => "隐藏曲目背景绘制", "hit" => "减少旋钮尘粒（保留按键命中）", "lane" => "减少轨道反光和 HUD 泛光", "extra" => "隐藏旋钮周边光效、连击光束与 HUD 装饰", "judgment" => "隐藏判定文字及通关/失败演出", "black" => "深黑背景纹理", "backdrop" => "深黑背景动画底色", "frame" => "隐藏顶部外框与底部机台装饰", _ => group };
     readonly Game game;
     readonly EffectCatalog catalog;
     readonly Action guard;
@@ -101,10 +101,18 @@ sealed class Effects
         if (!File.Exists(marker) || File.ReadAllText(marker) != $"sdvx-smooth-effects-v{catalog.Version}:{group}")
             throw new IOException("特效目录版本不匹配或不属于本工具。旧版请先点击停用旧版覆盖：" + folder);
     }
-    public EffectMode Read() => new(ActiveState("background"), ActiveState("hit"), ActiveState("lane"), ActiveState("extra"), ActiveState("judgment"), ActiveState("black") | ActiveState("backdrop"));
+    public EffectMode Read() => new(ActiveState("background"), ActiveState("hit"), ActiveState("lane"), ActiveState("extra") | ActiveState("frame"), ActiveState("judgment"), ActiveState("black") | ActiveState("backdrop"));
     public bool NeedsDeepBlackUpgrade() => Read().DeepBlack && (!ActiveState("black") || !ActiveState("backdrop"));
+    IEnumerable<(string Named, string Archive, string Hash)> ArchiveAliases(string group)
+        => catalog.Items.Where(i => i.Group == group && i.ArchiveOutput.Length > 0 && i.ArchiveOutput != i.Output)
+            .Select(i => (i.Output, i.ArchiveOutput, i.AfterHash))
+            .Concat(group == "backdrop" ? catalog.BackgroundFills.Where(f => f.ArchiveOutput.Length > 0 && f.ArchiveOutput != f.Output)
+                .Select(f => (f.Output, f.ArchiveOutput, f.AfterHash)) : Array.Empty<(string, string, string)>());
+    public bool NeedsResourcePathUpgrade() => (Read().Extra && catalog.Items.Any(i => i.Group == "frame") && !ActiveState("frame")) || Groups.Where(ActiveState).Any(g => ArchiveAliases(g).Any(a => !File.Exists(Safe(Active(g), a.Archive))));
     public string Description() =>
         "USC 深黑 · 资源覆盖\r\n" +
+        "0.4.2 修复：同时写入 IFS 内真实哈希文件名，不再仅依赖 Hook 的资源名映射。\r\n" +
+        $"机台与顶部装饰：{Count("frame")} 个绘制资源，随“隐藏动态装饰”开关共同控制。\r\n" +
         $"深黑背景：{catalog.BlackTextures.Count} 张纯黑纹理；配合隐藏背景绘制，减少残留色块。\r\n" +
         $"修复版补充 {catalog.BackgroundFills.Count} 个 AFP 动画底色，将已有的彩色底色改为黑色；保留透明度和时间线。\r\n" +
         $"背景：{Count("background")} 个绘制资源；旋钮尘粒：{Count("hit")} 个；轨道装饰：{Count("lane")} 个。\r\n" +
@@ -145,7 +153,10 @@ sealed class Effects
         var items = (rules ?? catalog).Items.Where(i => i.Group == group).ToArray();
         var textures = group == "black" ? (rules ?? catalog).BlackTextures : new List<BlackTexture>();
         var fills = group == "backdrop" ? (rules ?? catalog).BackgroundFills : new List<BackgroundFill>();
-        if (Directory.GetFiles(folder, "*", SearchOption.AllDirectories).Length != items.Length + textures.Count + fills.Count + 1) throw new IOException("特效目录含新增或缺失的文件，已保留目录并停止操作。");
+        var aliases = rules == null ? ArchiveAliases(group).ToArray() : Array.Empty<(string Named, string Archive, string Hash)>();
+        var allowed = items.Select(i => i.Output).Concat(textures.Select(t => t.Output)).Concat(fills.Select(f => f.Output)).Append(Marker).Concat(aliases.Select(a => a.Archive)).ToHashSet(StringComparer.Ordinal);
+        if (Directory.GetFiles(folder, "*", SearchOption.AllDirectories).Any(f => !allowed.Contains(Path.GetRelativePath(folder, f).Replace('\\', '/'))))
+            throw new IOException("特效目录含未知文件，已保留目录并停止操作。");
         foreach (var item in items)
         {
             string file = Safe(folder, item.Output);
@@ -161,6 +172,51 @@ sealed class Effects
             if (!File.Exists(file) || new FileInfo(file).Length != fill.Size || FileHash(file) != fill.AfterHash)
                 throw new IOException("背景动画底色覆盖被修改，已保留文件并停止操作：" + fill.Output);
         }
+        foreach (var alias in aliases)
+        {
+            string file = Safe(folder, alias.Archive);
+            // Missing aliases identify old named-only installs; modified aliases are never overwritten.
+            if (File.Exists(file) && FileHash(file) != alias.Hash) throw new IOException("哈希路径覆盖被修改，已停止操作：" + alias.Archive);
+        }
+    }
+    bool UpgradeResourcePaths(EffectMode desired, IProgress<string>? progress)
+    {
+        var pending = new List<(string Named, string Target, string Hash)>();
+        var sourceNames = new HashSet<string>(StringComparer.Ordinal);
+        foreach (string group in Groups.Where(desired.Enabled))
+        {
+            foreach (string folder in new[] { Active(group), Parked(group) }.Where(Directory.Exists))
+            {
+                Verify(folder, group);
+                pending.AddRange(ArchiveAliases(group).Where(a => !File.Exists(Safe(folder, a.Archive)))
+                    .Select(a => (Safe(folder, a.Named), Safe(folder, a.Archive), a.Hash)));
+                foreach (var item in catalog.Items.Where(i => i.Group == group)) sourceNames.Add(item.Source);
+                if (group == "backdrop") foreach (var fill in catalog.BackgroundFills) sourceNames.Add(fill.Source);
+            }
+        }
+        if (pending.Count == 0) return false;
+        if (game.Identifier() != catalog.GameIdentifier) throw new IOException("哈希路径升级仅支持已核对的游戏 DLL：" + catalog.GameIdentifier);
+        ValidateHook();
+        CheckConflicts(catalog.Items.Where(i => desired.Enabled(i.Group)).Select(i => i.Output)
+            .Concat(desired.DeepBlack ? catalog.BlackTextures.Select(t => t.Output).Concat(catalog.BackgroundFills.Select(f => f.Output)) : Array.Empty<string>()));
+        foreach (var source in catalog.Sources.Where(s => sourceNames.Contains(s.Path)))
+        {
+            progress?.Report("升级前核对原资源：" + Path.GetFileName(source.Path));
+            string file = Safe(Path.Combine(game.Root, "contents/data"), source.Path);
+            if (!File.Exists(file) || new FileInfo(file).Length != source.Size || FileHash(file) != source.Sha256)
+                throw new IOException("原资源已变化，未补齐哈希路径：" + source.Path);
+        }
+        guard(); string stage = Safe(store, "path-staging/" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(stage);
+        int count = 0;
+        foreach (var alias in pending)
+        {
+            string temporary = Safe(stage, (++count).ToString()); File.Copy(alias.Named, temporary);
+            if (FileHash(temporary) != alias.Hash) throw new IOException("升级期间原覆盖被修改，已停止。");
+            File.Move(temporary, alias.Target);
+            if (count % 500 == 0) { guard(); progress?.Report($"补齐 IFS 哈希路径：{count}/{pending.Count}"); }
+        }
+        guard();
+        return true;
     }
     public static byte[] BlackenBackgroundFill(byte[] original, int[] rgbOffsets)
     {
@@ -205,6 +261,7 @@ sealed class Effects
                 if (entries.Length == 0) continue;
                 CheckMarker(folder, group);
                 var known = legacy.Items.Where(i => i.Group == group).ToDictionary(i => i.Output, StringComparer.Ordinal);
+                foreach (var item in legacy.Items.Where(i => i.Group == group && i.ArchiveOutput.Length > 0)) known[item.ArchiveOutput] = item;
                 // Allow already withdrawn files after an interrupted upgrade, but preserve all current-rule files.
                 foreach (string file in Directory.GetFiles(folder, "*", SearchOption.AllDirectories))
                 {
@@ -287,6 +344,7 @@ sealed class Effects
                 byte[] patched = StripGeometry(original);
                 if (Game.Hash(patched) != item.AfterHash) throw new IOException("特效补丁结果校验失败。");
                 string target = Safe(stage, item.Output); Directory.CreateDirectory(Path.GetDirectoryName(target)!); File.WriteAllBytes(target, patched);
+                if (item.ArchiveOutput.Length > 0 && item.ArchiveOutput != item.Output) File.WriteAllBytes(Safe(stage, item.ArchiveOutput), patched);
                 if (++completed % 250 == 0) progress?.Report($"生成 {Title(group)}：{completed}/{items.Length}");
             }
             foreach (var fill in fills.Where(f => f.Source == source.Path))
@@ -297,6 +355,7 @@ sealed class Effects
                 byte[] patched = BlackenBackgroundFill(original, fill.RgbOffsets);
                 if (Game.Hash(patched) != fill.AfterHash) throw new IOException("背景动画底色补丁校验失败。");
                 string target = Safe(stage, fill.Output); Directory.CreateDirectory(Path.GetDirectoryName(target)!); File.WriteAllBytes(target, patched);
+                if (fill.ArchiveOutput.Length > 0 && fill.ArchiveOutput != fill.Output) File.WriteAllBytes(Safe(stage, fill.ArchiveOutput), patched);
                 if (++completed % 100 == 0) progress?.Report($"生成背景动画底色：{completed}/{fills.Count}");
             }
         }
@@ -312,8 +371,9 @@ sealed class Effects
     }
     public string Apply(EffectMode desired, IProgress<string>? progress = null)
     {
-        guard(); bool upgraded = UpgradeFeedback(); var before = Read();
+        guard(); bool upgraded = UpgradeFeedback(); bool pathsUpgraded = UpgradeResourcePaths(desired, progress); var before = Read();
         var changed = Groups.Where(g => ActiveState(g) != desired.Enabled(g)).ToArray();
+        if (changed.Length == 0 && pathsUpgraded) return "已补齐 IFS 内真实哈希路径覆盖，下次启动游戏生效。原有精简选择保持不变。";
         if (changed.Length == 0) return upgraded ? "已撤回旧版的按键命中、长按及按键光柱覆盖；原版命中反馈将在下次启动恢复。背景精简保持原设置。" : "特效模式没有变化。";
         if (changed.Any(desired.Enabled))
         {
