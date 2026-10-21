@@ -8,6 +8,7 @@ namespace SdvxSmooth;
 
 record EffectSource(string Path, string Sha256, long Size);
 record EffectItem(string Group, string Source, long Offset, int Size, string Output, string BeforeHash, string AfterHash);
+record BlackTexture(string Source, string Output, int Width, int Height);
 sealed class EffectCatalog
 {
     public int Version { get; set; }
@@ -15,6 +16,7 @@ sealed class EffectCatalog
     public List<EffectSource> Sources { get; set; } = new();
     public List<EffectItem> Items { get; set; } = new();
     public List<string> ProtectedOutputs { get; set; } = new();
+    public List<BlackTexture> BlackTextures { get; set; } = new();
     public static EffectCatalog Load(bool legacy = false)
     {
         string name = legacy ? "LegacyEffectCatalog.json.gz" : "EffectCatalog.json.gz";
@@ -28,9 +30,11 @@ sealed class EffectCatalog
         return JsonSerializer.Deserialize<EffectCatalog>(stream)!;
     }
 }
-record EffectMode(bool Background, bool Hit, bool Lane, bool Extra = false, bool Judgment = false)
+record EffectMode(bool Background, bool Hit, bool Lane, bool Extra = false, bool Judgment = false, bool DeepBlack = false)
 {
-    public bool Enabled(string group) => group switch { "background" => Background, "hit" => Hit, "lane" => Lane, "extra" => Extra, "judgment" => Judgment, _ => throw new IOException("未知特效分组。") };
+    public static EffectMode Usc => new(true, true, true, true, false, true);
+    public static EffectMode Original => new(false, false, false);
+    public bool Enabled(string group) => group switch { "background" => Background, "hit" => Hit, "lane" => Lane, "extra" => Extra, "judgment" => Judgment, "black" => DeepBlack, _ => throw new IOException("未知特效分组。") };
 }
 sealed class EffectTransaction
 {
@@ -42,13 +46,20 @@ sealed class EffectTransaction
 
 sealed class Effects
 {
-    public static readonly string[] Groups = { "background", "hit", "lane", "extra", "judgment" };
-    public static string Title(string group) => group switch { "background" => "隐藏曲目背景绘制", "hit" => "减少旋钮尘粒（保留按键命中）", "lane" => "减少轨道反光和 HUD 泛光", "extra" => "隐藏旋钮周边光效、连击光束与 HUD 装饰", "judgment" => "隐藏判定文字及通关/失败演出", _ => group };
+    public static readonly string[] Groups = { "background", "hit", "lane", "extra", "judgment", "black" };
+    public static string Title(string group) => group switch { "background" => "隐藏曲目背景绘制", "hit" => "减少旋钮尘粒（保留按键命中）", "lane" => "减少轨道反光和 HUD 泛光", "extra" => "隐藏旋钮周边光效、连击光束与 HUD 装饰", "judgment" => "隐藏判定文字及通关/失败演出", "black" => "深黑背景纹理", _ => group };
     readonly Game game;
     readonly EffectCatalog catalog;
     readonly Action guard;
     readonly string modRoot;
     readonly string store;
+    readonly Dictionary<(int Width, int Height), byte[]> blackPngCache = new();
+    byte[] CachedBlackPng(BlackTexture texture)
+    {
+        var size = (texture.Width, texture.Height);
+        if (!blackPngCache.TryGetValue(size, out var png)) blackPngCache[size] = png = BlackPng(size.Width, size.Height);
+        return png;
+    }
     const string Marker = ".sdvx-smooth-owned.json";
     public Effects(Game game, EffectCatalog? catalog = null, Action? processGuard = null)
     {
@@ -88,9 +99,10 @@ sealed class Effects
         if (!File.Exists(marker) || File.ReadAllText(marker) != $"sdvx-smooth-effects-v{catalog.Version}:{group}")
             throw new IOException("特效目录版本不匹配或不属于本工具。旧版请先点击停用旧版覆盖：" + folder);
     }
-    public EffectMode Read() => new(ActiveState("background"), ActiveState("hit"), ActiveState("lane"), ActiveState("extra"), ActiveState("judgment"));
+    public EffectMode Read() => new(ActiveState("background"), ActiveState("hit"), ActiveState("lane"), ActiveState("extra"), ActiveState("judgment"), ActiveState("black"));
     public string Description() =>
-        "游戏内特效精简（资源级实验功能）\r\n" +
+        "USC 深黑 · 资源覆盖\r\n" +
+        $"深黑背景：{catalog.BlackTextures.Count} 张纯黑纹理；配合隐藏背景绘制，减少残留色块。\r\n" +
         $"背景：{Count("background")} 个绘制资源；旋钮尘粒：{Count("hit")} 个；轨道装饰：{Count("lane")} 个。\r\n" +
         $"额外光效：{Count("extra")} 个；判定显示/演出：{Count("judgment")} 个，可分别恢复。\r\n" +
         "修正版保持原始绘制命令和计数，仅把选中几何的顶点重合为一个点。\r\n" +
@@ -106,10 +118,10 @@ sealed class Effects
         bool injected = options.Elements("option").Any(e => new[] { "k", "z" }.Contains((string?)e.Attribute("name")) && ((string?)e.Attribute("value") ?? "").Contains("ifs_hook.dll", StringComparison.OrdinalIgnoreCase));
         if (!injected) throw new IOException("未配置 ifs_hook.dll，资源覆盖不会生效。请先恢复 LAZY 的 IFS Hook 注入设置。");
     }
-    void CheckConflicts(IEnumerable<EffectItem> items)
+    void CheckConflicts(IEnumerable<string> outputs)
     {
         if (!Directory.Exists(modRoot)) return;
-        var containers = items.Select(i => i.Output[..i.Output.IndexOf("/geo/", StringComparison.Ordinal)]).Distinct().ToArray();
+        var containers = outputs.Select(output => output[..(output.IndexOf("_ifs/", StringComparison.Ordinal) + 4)]).Distinct().ToArray();
         foreach (string mod in Directory.GetDirectories(modRoot))
         {
             string name = Path.GetFileName(mod);
@@ -127,13 +139,26 @@ sealed class Effects
     {
         CheckMarker(folder, group);
         var items = (rules ?? catalog).Items.Where(i => i.Group == group).ToArray();
-        if (Directory.GetFiles(folder, "*", SearchOption.AllDirectories).Length != items.Length + 1) throw new IOException("特效目录含新增或缺失的文件，已保留目录并停止操作。");
+        var textures = group == "black" ? (rules ?? catalog).BlackTextures : new List<BlackTexture>();
+        if (Directory.GetFiles(folder, "*", SearchOption.AllDirectories).Length != items.Length + textures.Count + 1) throw new IOException("特效目录含新增或缺失的文件，已保留目录并停止操作。");
         foreach (var item in items)
         {
             string file = Safe(folder, item.Output);
             if (!File.Exists(file) || new FileInfo(file).Length != item.Size || FileHash(file) != item.AfterHash)
                 throw new IOException("特效文件已被修改，已停止操作并保留文件：" + item.Output);
         }
+        foreach (var texture in textures)
+            if (FileHash(Safe(folder, texture.Output)) != Game.Hash(CachedBlackPng(texture)))
+                throw new IOException("深黑纹理被修改，已保留文件并停止操作：" + texture.Output);
+    }
+    // Solid swatches only: no game image data is read, copied or shipped.
+    public static byte[] BlackPng(int width, int height)
+    {
+        if (width < 1 || height < 1 || width > 8192 || height > 8192 || (long)width * height > 16777216)
+            throw new IOException("深黑纹理尺寸无效。");
+        using var bitmap = new Bitmap(width, height, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+        using (var graphics = Graphics.FromImage(bitmap)) graphics.Clear(Color.Black);
+        using var stream = new MemoryStream(); bitmap.Save(stream, System.Drawing.Imaging.ImageFormat.Png); return stream.ToArray();
     }
     IEnumerable<EffectItem> RetiredFeedback(EffectCatalog legacy)
     {
@@ -216,7 +241,9 @@ sealed class Effects
     void Prepare(string group, IProgress<string>? progress)
     {
         var items = catalog.Items.Where(i => i.Group == group).ToArray();
-        var sources = catalog.Sources.Where(s => items.Any(i => i.Source == s.Path)).ToArray();
+        var textures = group == "black" ? catalog.BlackTextures : new List<BlackTexture>();
+        if (group == "black" && textures.Count == 0) throw new IOException("当前规则没有深黑背景纹理，请使用完整新版程序。");
+        var sources = catalog.Sources.Where(s => items.Any(i => i.Source == s.Path) || textures.Any(t => t.Source == s.Path)).ToArray();
         foreach (var source in sources)
         {
             progress?.Report("核对原始资源：" + Path.GetFileName(source.Path));
@@ -242,6 +269,12 @@ sealed class Effects
                 if (++completed % 250 == 0) progress?.Report($"生成 {Title(group)}：{completed}/{items.Length}");
             }
         }
+        foreach (var texture in textures)
+        {
+            string target = Safe(stage, texture.Output); Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+            File.WriteAllBytes(target, CachedBlackPng(texture));
+            if (++completed % 100 == 0) progress?.Report($"生成深黑背景：{completed}/{textures.Count}");
+        }
         File.WriteAllText(Safe(stage, Marker), $"sdvx-smooth-effects-v{catalog.Version}:{group}");
         Directory.CreateDirectory(Path.GetDirectoryName(Parked(group))!);
         Directory.Move(stage, Parked(group));
@@ -254,7 +287,8 @@ sealed class Effects
         if (changed.Any(desired.Enabled))
         {
             if (game.Identifier() != catalog.GameIdentifier) throw new IOException("特效目录仅支持已核对的游戏 DLL：" + catalog.GameIdentifier);
-            ValidateHook(); CheckConflicts(catalog.Items.Where(i => desired.Enabled(i.Group)));
+            ValidateHook(); CheckConflicts(catalog.Items.Where(i => desired.Enabled(i.Group)).Select(i => i.Output)
+                .Concat(desired.DeepBlack ? catalog.BlackTextures.Select(t => t.Output) : Array.Empty<string>()));
         }
         foreach (var group in changed)
         {

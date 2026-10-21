@@ -31,7 +31,7 @@ static class Program
             try
             {
                 var effects = new Effects(new Game(DefaultRoot), EffectCatalog.LoadUnsafe());
-                string result = effects.Apply(new(false, false, false, false, false));
+                string result = effects.Apply(EffectMode.Original);
                 File.WriteAllText(Path.Combine(AppContext.BaseDirectory, "restore-result.txt"), result);
             }
             catch (Exception e)

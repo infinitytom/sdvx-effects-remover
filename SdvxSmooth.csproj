@@ -5,7 +5,8 @@
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <AssemblyName>SDVX特效精简-崩溃修正版</AssemblyName>
+    <AssemblyName>SDVX特效精简-USC深黑</AssemblyName>
+    <Version>0.4.0</Version>
     <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
   <ItemGroup><EmbeddedResource Include="EffectCatalog.json.gz" /><EmbeddedResource Include="LegacyEffectCatalog.json.gz" /><EmbeddedResource Include="UnsafeEffectCatalog.json.gz" /></ItemGroup>

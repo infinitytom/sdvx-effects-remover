@@ -25,10 +25,12 @@ static class EffectTests
         Directory.CreateDirectory(Path.GetDirectoryName(sourcePath)!); File.WriteAllBytes(sourcePath, source);
         var catalog = new EffectCatalog { Version = 2, GameIdentifier = game.Identifier() };
         catalog.Sources.Add(new("graphics/fixture.ifs", Game.Hash(source), source.Length));
-        foreach (string group in Effects.Groups)
+        foreach (string group in Effects.Groups.Where(g => g != "black"))
             catalog.Items.Add(new(group, "graphics/fixture.ifs", 100, geometry.Length, $"graphics/fixture_ifs/geo/{group}_shape5", Game.Hash(geometry), Game.Hash(Effects.StripGeometry(geometry))));
+        catalog.BlackTextures.Add(new("graphics/fixture.ifs", "graphics/fixture_ifs/tex/background.png", 32, 18));
         var engine = new Effects(game, catalog, () => { });
-        var all = new EffectMode(true, true, true, true, true); var original = new EffectMode(false, false, false, false, false);
+        var all = new EffectMode(true, true, true, true, true, true); var original = EffectMode.Original;
+        Check(EffectMode.Usc.DeepBlack && EffectMode.Usc.Background && !EffectMode.Usc.Judgment, "USC preset must keep timing feedback and enable deep black");
         Check(engine.Read() == original, "fixture initially enabled");
         engine.Apply(all); Check(engine.Read() == all, "effects not enabled");
         Check(File.ReadAllBytes(sourcePath).SequenceEqual(source), "original effects resource changed");
@@ -41,6 +43,19 @@ static class EffectTests
         }
         engine.Apply(all); engine.Apply(original); Check(engine.Read() == original, "effects restore failed");
         engine.Apply(all); Check(engine.Read() == all, "effects re-enable failed");
+        string blackFile = Path.Combine(fixtureRoot, "contents", "data_mods", "zzzz_sdvx_smooth_black", catalog.BlackTextures[0].Output);
+        using (var black = new Bitmap(blackFile))
+        {
+            Check(black.Width == 32 && black.Height == 18, "black texture dimensions changed");
+            for (int y = 0; y < black.Height; y++)
+                for (int x = 0; x < black.Width; x++) Check(black.GetPixel(x, y).ToArgb() == Color.Black.ToArgb(), "deep-black pixel is not opaque RGB 0");
+        }
+        engine.Apply(all with { DeepBlack = false }); Check(!engine.Read().DeepBlack && engine.Read().Background, "black cannot restore independently");
+        engine.Apply(all);
+        File.AppendAllText(blackFile, "external edit"); Refuses(() => engine.Apply(original));
+        Check(engine.Read() == all, "black tamper caused partial restore");
+        File.WriteAllBytes(blackFile, Effects.BlackPng(32, 18));
+        results.Add("PASS: USC preset preserves judgments; deep-black PNG dimensions/opaque RGB 0 verified; independent restore/re-enable; tampered PNG refuses whole transaction");
         var showJudgment = all with { Judgment = false };
         engine.Apply(showJudgment); Check(engine.Read() == showJudgment, "judgments cannot be restored independently");
         Check(engine.Read().Background && engine.Read().Extra && engine.Read().Hit, "judgment restore changed other groups");
@@ -77,6 +92,8 @@ static class EffectTests
             Check(nativeCheck >= 0 && renderer.AsSpan(nativeCheck, Math.Min(64, renderer.Length - nativeCheck)).IndexOf(Convert.FromHexString("BA7B040000")) >= 0, "native line-1147 draw-count guard changed; re-audit renderer");
             results.Add("PASS: installed native renderer has cmp [geometry+0x1c],1 before line-1147 assertion; corrected patches preserve that field");
             var actual = EffectCatalog.Load(); string dataRoot = Path.Combine(Program.DefaultRoot, "contents", "data");
+            Check(actual.BlackTextures.Count > 0 && actual.BlackTextures.Select(t => t.Output).Distinct().Count() == actual.BlackTextures.Count, "black texture catalog missing or duplicated");
+            Check(actual.BlackTextures.All(t => t.Output.StartsWith("graphics/game_bg/", StringComparison.Ordinal) && t.Output.Contains("_ifs/tex/") && t.Width > 0 && t.Height > 0), "black textures target non-background resources");
             Check(actual.Items.Where(i => i.Group == "hit").All(i => Path.GetFileName(i.Output).StartsWith("efhg_dust_")), "button/hold feedback targeted");
             Check(actual.Items.All(i => !i.Source.EndsWith("/game_lane.ifs")), "keybeam package targeted");
             Check(actual.Items.Any(i => i.Group == "judgment" && i.Source.EndsWith("/hantei.ifs")), "judgment banners not covered");
@@ -102,6 +119,22 @@ static class EffectTests
                 }
             }
             results.Add($"PASS: all {count} actual geometry patches validated read-only across {actual.Sources.Count} IFS files; {protectedOutputs.Count} hit/hold/cursor entries excluded, judgments independently controlled");
+            // Exercise every real texture size/path against synthetic sources in a separate temporary game.
+            string blackRoot = Path.Combine(fixtureRoot, "black-catalog-test");
+            foreach (var rel in new[] { Game.XmlRel, Game.PatchRel, "contents/modules/soundvoltex.dll", "contents/spice64.exe", "contents/data/graphics/fixture.ifs" })
+            {
+                string target = Path.Combine(blackRoot, rel); Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+                File.Copy(Path.Combine(fixtureRoot, rel), target);
+            }
+            var blackCatalog = new EffectCatalog { Version = 2, GameIdentifier = game.Identifier(), Sources = catalog.Sources,
+                BlackTextures = actual.BlackTextures.Select(t => t with { Source = "graphics/fixture.ifs" }).ToList() };
+            var blackEngine = new Effects(new Game(blackRoot, () => { }), blackCatalog, () => { });
+            var blackMode = original with { DeepBlack = true };
+            blackEngine.Apply(blackMode); Check(blackEngine.Read() == blackMode, "full black catalog apply failed");
+            Check(Directory.GetFiles(Path.Combine(blackRoot, "contents/data_mods/zzzz_sdvx_smooth_black"), "*.png", SearchOption.AllDirectories).Length == actual.BlackTextures.Count, "full black catalog file count mismatch");
+            blackEngine.Apply(original); Check(blackEngine.Read() == original, "full black catalog restore failed");
+            blackEngine.Apply(blackMode); blackEngine.Apply(original);
+            results.Add($"PASS: all {actual.BlackTextures.Count} deep-black PNG overrides generated, verified, restored and re-enabled using synthetic sources in a temporary game; real install untouched");
         }
     }
 }

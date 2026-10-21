@@ -16,8 +16,9 @@ sealed class MainForm : Form
     Game? game;
     public MainForm()
     {
-        Text = "SDVX 特效精简 v3 · 绘制断言修正（待进歌验证）"; Font = new Font("Microsoft YaHei UI", 10);
-        ClientSize = new Size(940, 740); MinimumSize = new Size(880, 720); StartPosition = FormStartPosition.CenterScreen;
+        Text = "SDVX Effects Remover · USC 深黑"; Font = new Font("Microsoft YaHei UI", 10);
+        ClientSize = new Size(1060, 840); MinimumSize = new Size(1000, 820); StartPosition = FormStartPosition.CenterScreen;
+        BackColor = Theme.Background; ForeColor = Theme.Text;
         var layout = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(24), ColumnCount = 1, RowCount = 10 };
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 54));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 46));
@@ -45,15 +46,30 @@ sealed class MainForm : Form
         actions.Controls.Add(Button("预览并应用", Apply, 135)); actions.Controls.Add(Button("恢复备份…", Restore, 135));
         actions.Controls.Add(Button("打开备份文件夹", (_, _) => Run(() => { var g = GetGame(); Directory.CreateDirectory(g.Backups); Process.Start(new ProcessStartInfo("explorer.exe", g.Backups) { UseShellExecute = true }); }), 160));
         layout.Controls.Add(actions, 0, 8); layout.Controls.Add(status, 0, 9);
-        var tabs = new TabControl { Dock = DockStyle.Fill };
-        var effectPage = new TabPage("游戏内特效"); effectPage.Controls.Add(new EffectsPanel());
-        var startupPage = new TabPage("启动附加设置"); startupPage.Controls.Add(layout);
-        tabs.TabPages.Add(effectPage); tabs.TabPages.Add(startupPage); Controls.Add(tabs);
-        Shown += (_, _) => LoadGame();
+        Theme.Apply(layout);
+        var shell = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, Margin = Padding.Empty };
+        shell.RowStyles.Add(new RowStyle(SizeType.Absolute, 72)); shell.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        var header = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, Padding = new Padding(30, 18, 20, 10) };
+        header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 300));
+        header.Controls.Add(Theme.Label("SDVX  /  EFFECTS REMOVER", 17, true), 0, 0);
+        var navigation = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false };
+        var body = new Panel { Dock = DockStyle.Fill, Margin = Padding.Empty };
+        var effects = new EffectsPanel(); body.Controls.Add(effects); body.Controls.Add(layout); layout.Visible = false;
+        var effectTab = Theme.Button("画面精简", (_, _) => {
+            if (effects.IsBusy) return;
+            if (layout.Visible) effects.UseRoot(path.Text);
+            layout.Visible = false; effects.Visible = true;
+        }, 125);
+        var startupTab = Theme.Button("启动设置", (_, _) => {
+            if (effects.IsBusy) return;
+            effects.Visible = false; layout.Visible = true; path.Text = effects.GameRoot; LoadGame();
+        }, 125);
+        navigation.Controls.Add(effectTab); navigation.Controls.Add(startupTab); header.Controls.Add(navigation, 1, 0);
+        shell.Controls.Add(header, 0, 0); shell.Controls.Add(body, 0, 1); Controls.Add(shell);
     }
     static Button Button(string text, EventHandler action, int width = 85)
     {
-        var b = new Button { Text = text, Width = width, Height = 34, FlatStyle = FlatStyle.System }; b.Click += action; return b;
+        return Theme.Button(text, action, width);
     }
     void Run(Action action) { try { action(); } catch (Exception e) { MessageBox.Show(this, e.Message, "操作未完成", MessageBoxButtons.OK, MessageBoxIcon.Warning); status.Text = "操作未完成，请查看提示。"; } }
     Game GetGame()

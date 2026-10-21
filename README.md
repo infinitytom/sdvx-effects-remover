@@ -2,16 +2,26 @@
 
 Windows 图形工具：通过可恢复的 IFS LayeredFS 覆盖，减少指定 SDVX 版本的背景和装饰光效，同时保留按键命中与基本读谱信息。
 
+### v0.4 · USC 深黑
+
+参照 USC 视频的深黑背景与清晰读谱反馈，新增「USC 深黑」预设：隐藏舞台、减少旋钮尘粒、轨道泛光及动态装饰，同时保留判定文字、EARLY/LATE 和连击信息。新界面采用深黑底色、青色开关与轨道示意图，完整资源信息收进「详细信息」。预设只改变待应用选择，点击「应用当前选择」并确认后才写入游戏。
+
+「深黑背景」将已识别 `graphics/game_bg` 中的 4302 张纹理替换为同尺寸、不透明的 RGB `0,0,0` PNG，结合原有背景绘制精简，减少残留背景色块。纯黑纹理由程序生成，不包含原游戏图片；该组可单独停用。五组既有几何规则与 625 个命中/长按/旋钮保护条目保持不变，沿用 v2 备份目录。恢复原版也会停用新增的深黑纹理组。
+
+工具右侧为示意图，不是游戏实拍。SDVX 的 HUD 布局、镜头、Live2D 和脚本行为仍沿用原版；此更新尚未实机进歌验证，无法保证所有场景都完全纯黑或与 USC 相同。
+
 **实验项目，修正版尚未完成实际歌曲验证。** 不保证提高帧率或消除所有演出。请先确认原版游戏稳定，再逐组试用。
 
 ## 下载与使用
 
 在 [Releases](https://github.com/infinitytom/sdvx-effects-remover/releases) 下载 Windows x64 预览版，需要安装 .NET 8 Windows Desktop Runtime。
 
+完整步骤、预设区别、旧版升级、备份恢复和常见问题见 **[v0.4 使用教程](docs/使用教程.md)**。发布 ZIP 中也附带相同教程。
+
 1. 退出游戏和 LAZY 启动器，打开程序。
 2. 点击“浏览”，选择含 `contents` 的 LAZY_KFC 根目录，再读取模式。程序会在本机用户配置目录记住所选路径。
-3. 选择需要的精简项，点击“应用特效模式”，预览后确认，下次启动游戏生效。
-4. 点击“恢复原版画面”可停用本版全部覆盖。首次建议只试用一组；“仅留命中”会选择全部五组，包括隐藏判定显示。
+3. 点击“USC 深黑”或自行调整开关，点击“应用当前选择”，预览后确认，下次启动游戏生效。
+4. 点击“恢复原版”可停用本版全部覆盖。“仅留命中”会选择全部六组，包括隐藏判定显示；“USC 深黑”会保留判定显示。
 
 仅支持已核对的 DLL 标识 `KFC-6aa256e6_7ad708` 和匹配的原始资源。启用前核对原资源哈希；不匹配或与其他模组覆盖同一资源容器时停止操作。项目不提供游戏、曲库、原始纹理、DLL 或账号数据。
 
@@ -20,6 +30,7 @@ Windows 图形工具：通过可恢复的 IFS LayeredFS 覆盖，减少指定 SD
 | 分组 | 修改范围 |
 | --- | --- |
 | 背景 | 已识别的舞台、人物背景、背景粒子几何绘制 |
+| 深黑背景 | 已识别的曲目背景纹理，替换为同尺寸的不透明纯黑 PNG |
 | 旋钮尘粒 | 指定旋钮尘粒动画 |
 | 轨道反光 | 指定轨道反光与 HUD 泛光 |
 | 额外装饰 | 旋钮周边光效、连击光束、HUD 动态装饰 |
@@ -27,7 +38,7 @@ Windows 图形工具：通过可恢复的 IFS LayeredFS 覆盖，减少指定 SD
 
 保留按键命中闪光、长按反馈、按键光柱、音符、旋钮定位、血条、分数和连击数字。隐藏判定显示不改变实际判定逻辑、成绩或通关结果，可独立恢复。镜头倾斜、旋转、谱面演出指令、Live2D 和动画脚本计算不在本版处理范围。
 
-“启动附加设置”页另外提供日志级别、副屏强制刷新、Spice 叠加界面和配套的游戏/音符 60/120 FPS 设置。它们与特效分组分别应用。
+“启动设置”页另外提供日志级别、副屏强制刷新、Spice 叠加界面和配套的游戏/音符 60/120 FPS 设置。它们与特效分组分别应用。
 
 ## 旧版崩溃与本版修正
 
@@ -39,7 +50,7 @@ Windows 图形工具：通过可恢复的 IFS LayeredFS 覆盖，减少指定 SD
 
 ## 备份与恢复
 
-原始游戏 IFS、音频、谱面和 DLL 不会被改写。生成的五组覆盖放在 `contents/data_mods/zzzz_sdvx_smooth_*`；停用后移至游戏目录 `.sdvx-smooth/effects-v2/disabled`，历史记录位于同目录的 `history`。旧版备份保留在 `effects-v1`，请勿手动复制回游戏。
+原始游戏 IFS、音频、谱面和 DLL 不会被改写。生成的六组覆盖放在 `contents/data_mods/zzzz_sdvx_smooth_*`；停用后移至游戏目录 `.sdvx-smooth/effects-v2/disabled`，历史记录位于同目录的 `history`。旧版备份保留在 `effects-v1`，请勿手动复制回游戏。
 
 启动设置修改前备份至 `.sdvx-smooth/backups`，支持完整恢复；若同一配置后来被其他程序修改，工具拒绝直接覆盖。更新游戏或遇到异常时先恢复原版，保留本地日志供排查。日志可能包含个人信息，请先脱敏再提交 Issue。
 
@@ -48,10 +59,10 @@ Windows 图形工具：通过可恢复的 IFS LayeredFS 覆盖，减少指定 SD
 需要 Windows 与 .NET 8 SDK：
 
 ```powershell
-dotnet publish -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -p:DebugType=None -o dist
-$app = Get-ChildItem dist -Filter '*.exe' | Select-Object -First 1
+dotnet publish -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -p:DebugType=None -o dist/usc-v0.4
+$app = Get-Item 'dist/usc-v0.4/SDVX特效精简-USC深黑.exe'
 $p = Start-Process -FilePath $app.FullName -ArgumentList '--self-test' -Wait -PassThru
-Get-Content dist/self-test.txt
+Get-Content dist/usc-v0.4/self-test.txt
 if ($p.ExitCode -ne 0) { throw 'Tests failed' }
 ```
 

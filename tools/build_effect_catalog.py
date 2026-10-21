@@ -1,6 +1,7 @@
 """Read local IFS manifests and emit offset-only patch instructions. Never alter game data."""
 from pathlib import Path
 from ifstools.ifs import IFS
+from ifstools.handlers.image_file import ImageFile
 import gzip
 import hashlib
 import json
@@ -21,6 +22,7 @@ sources = {}
 items = []
 stats = {}
 protected_outputs = set()
+black_textures = []
 
 def labels(data):
     endian = '>' if data[:4] == b'GE2D' else '<'
@@ -88,6 +90,25 @@ def add_package(path, group, accept):
 
 for package in sorted((ROOT/'graphics/game_bg').glob('*.ifs')):
     add_package(package, 'background', lambda name, textures: True)
+    obj = IFS(str(package))
+    try:
+        tex = obj.tree.folders.get('tex')
+        if tex:
+            for f in tex.files.values():
+                if not isinstance(f, ImageFile):
+                    continue
+                source = Path(f.ifs_data.file.name).resolve().relative_to(ROOT).as_posix()
+                if source not in sources:
+                    source_path = ROOT / source
+                    with source_path.open('rb') as stream:
+                        sha = hashlib.file_digest(stream, 'sha256').hexdigest().upper()
+                    sources[source] = {'Path': source, 'Sha256': sha, 'Size': source_path.stat().st_size}
+                width, height = f.img_size
+                assert 0 < width <= 8192 and 0 < height <= 8192 and width * height <= 16777216
+                container = package.relative_to(ROOT).with_suffix('').as_posix() + '_ifs'
+                black_textures.append({'Source': source, 'Output': f'{container}/tex/{f.name}', 'Width': width, 'Height': height})
+    finally:
+        obj.file.close()
 
 # Preserve the complete original button-hit and hold animations, including their light pillars.
 # Only knob dust remains in the historic "hit" group so installed modes can upgrade without renaming.
@@ -120,6 +141,7 @@ add_package(ROOT/'graphics/ver06/game_effect.ifs', 'judgment', lambda name, tex:
 
 assert len({i['Output'] for i in items}) == len(items)
 assert not protected_outputs.intersection(i['Output'] for i in items), 'A required hit/cursor resource was selected'
-catalog = {'Version': 2, 'GameIdentifier': 'KFC-6aa256e6_7ad708', 'Sources': list(sources.values()), 'Items': items, 'ProtectedOutputs': sorted(protected_outputs)}
+assert len({t['Output'] for t in black_textures}) == len(black_textures)
+catalog = {'Version': 2, 'GameIdentifier': 'KFC-6aa256e6_7ad708', 'Sources': list(sources.values()), 'Items': items, 'ProtectedOutputs': sorted(protected_outputs), 'BlackTextures': black_textures}
 OUT.write_bytes(gzip.compress(json.dumps(catalog, separators=(',', ':')).encode('utf8'), mtime=0))
-print(json.dumps({'groups': stats, 'sources': len(sources), 'catalog_bytes': OUT.stat().st_size}))
+print(json.dumps({'groups': stats, 'black_textures': len(black_textures), 'sources': len(sources), 'catalog_bytes': OUT.stat().st_size}))
