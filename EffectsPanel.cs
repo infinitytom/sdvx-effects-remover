@@ -4,7 +4,7 @@ sealed class EffectsPanel : UserControl
 {
     readonly TextBox path = new() { Dock = DockStyle.Fill, Text = Program.DefaultRoot };
     readonly OptionSwitch background = new("隐藏舞台背景", "移除舞台、人物背景和背景粒子绘制");
-    readonly OptionSwitch deepBlack = new("深黑背景", "用纯黑纹理替换背景素材，减少残留色块");
+    readonly OptionSwitch deepBlack = new("深黑背景", "修正背景动画底色，并覆盖背景纹理");
     readonly OptionSwitch hit = new("减少旋钮尘粒", "保留按键命中闪光、长按反馈和按键光柱");
     readonly OptionSwitch lane = new("收敛轨道泛光", "减少反光与 HUD 泛光，保留轨道和判定线");
     readonly OptionSwitch extra = new("隐藏动态装饰", "减少旋钮周边光效、连击光束与 HUD 装饰");
@@ -107,7 +107,7 @@ sealed class EffectsPanel : UserControl
             savedMode = mode; SelectMode(mode);
             report.Text = effects.Description() + "\r\n\r\n当前模式：\r\n" +
                 string.Join("\r\n", Effects.Groups.Select(g => Effects.Title(g) + "：" + (mode.Enabled(g) ? "已启用精简" : "原版")));
-            status.Text = effects.NeedsFeedbackUpgrade() ? "检测到旧版命中覆盖；点击应用特效模式即可恢复命中反馈并保留背景精简。" : "模式已读取，尚未更改游戏。";
+            status.Text = effects.NeedsDeepBlackUpgrade() ? "检测到旧版深黑覆盖：点击“应用当前选择”补齐背景动画底色修复。" : effects.NeedsFeedbackUpgrade() ? "检测到旧版命中覆盖；点击应用当前选择即可升级。" : "模式已读取，尚未更改游戏。";
         }
         catch (Exception e) { effects = null; savedMode = null; UpdatePreview(); report.Text = e.Message; status.Text = "无法读取，请检查游戏路径；可在“详细信息”中查看原因。"; }
     }
@@ -119,10 +119,12 @@ sealed class EffectsPanel : UserControl
             var selected = Selection();
             var engine = new Effects(new Game(path.Text)); var before = engine.Read();
             bool upgrade = engine.NeedsFeedbackUpgrade();
-            if (before == selected && !upgrade) { status.Text = "模式没有变化。"; return; }
+            bool blackUpgrade = selected.DeepBlack && engine.NeedsDeepBlackUpgrade();
+            if (before == selected && !upgrade && !blackUpgrade) { status.Text = "模式没有变化。"; return; }
             Game.EnsureStopped();
             string preview = string.Join("\r\n", Effects.Groups.Where(g => before.Enabled(g) != selected.Enabled(g)).Select(g => Effects.Title(g) + "：" + (selected.Enabled(g) ? "启用精简" : "恢复原版")));
             if (upgrade) preview += "\r\n撤回旧版按键命中、长按和按键光柱覆盖，保留完整命中反馈。";
+            if (blackUpgrade) preview += "\r\n升级旧版深黑覆盖：补齐 AFP 背景动画底色修复，保留其他精简选择。";
             preview += "\r\n\r\n通过独立资源模组覆盖，下次启动游戏生效。\r\n首次生成需要一些时间，期间请勿启动游戏。\r\n资源已做静态校验，尚未实机进歌验证。";
             if (MessageBox.Show(this, preview, "特效更改预览", MessageBoxButtons.OKCancel, MessageBoxIcon.Information) != DialogResult.OK) return;
             SetBusy(true);

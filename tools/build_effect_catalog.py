@@ -23,6 +23,68 @@ items = []
 stats = {}
 protected_outputs = set()
 black_textures = []
+background_fills = []
+
+def add_background_fills(obj, package):
+    afp = obj.tree.folders.get('afp')
+    if not afp or 'bsi' not in afp.folders:
+        return
+    for name, f in afp.files.items():
+        if name == 'afplist.xml':
+            continue
+        bsi = afp.folders['bsi'].files.get(name)
+        if not bsi:
+            raise ValueError(f'Missing AFP byte-swap table: {package}/{name}')
+        original = f.load(convert_kbin=False)
+        swaps = bsi.load(convert_kbin=False)
+        # Track the original byte positions of the decoded header. The rest of the
+        # movie and its BSI table remain byte-identical, including all timelines.
+        mapping = list(range(64))
+        pos = 0
+        for off in range(0, len(swaps), 2):
+            word = struct.unpack_from('<H', swaps, off)[0]
+            if word == 0 or pos >= 64:
+                break
+            pos += (word & 0x7f) * 2
+            kind, loops = word >> 13, (word >> 7) & 0x3f
+            if kind == 0:
+                pos += 256 * loops
+                continue
+            if kind not in (1, 2, 3):
+                raise ValueError('Unsupported AFP byte-swap operation')
+            size = 1 << kind
+            for _ in range(loops + 1):
+                if pos + size > len(original):
+                    raise ValueError('AFP byte-swap range exceeds movie')
+                if pos < 64:
+                    assert pos + size <= 64
+                    mapping[pos:pos+size] = reversed(mapping[pos:pos+size])
+                pos += size
+        header = bytes(original[i] for i in mapping)
+        assert header[0] in (7, 8, 9, 10) and header[1:4] == bytes.fromhex('b2d0c1')
+        assert struct.unpack_from('<I', header, 4)[0] == len(original)
+        assert struct.unpack_from('<H', header, 8)[0] == 0x200
+        flags = struct.unpack_from('<I', header, 12)[0]
+        # Only movies that ALREADY draw a background: never add opaque fills to
+        # transparent particle/subclips, which could cover foreground gameplay.
+        if not flags & 1 or header[31] == 0 or header[28:31] == b'\0\0\0':
+            continue
+        rgb_offsets = mapping[28:31]
+        assert len(set(rgb_offsets)) == 3 and all(28 <= i < 32 for i in rgb_offsets)
+        patched = bytearray(original)
+        for i in rgb_offsets:
+            patched[i] = 0
+        source = Path(f.ifs_data.file.name).resolve().relative_to(ROOT).as_posix()
+        if source not in sources:
+            source_path = ROOT / source
+            with source_path.open('rb') as stream:
+                sha = hashlib.file_digest(stream, 'sha256').hexdigest().upper()
+            sources[source] = {'Path': source, 'Sha256': sha, 'Size': source_path.stat().st_size}
+        container = package.relative_to(ROOT).with_suffix('').as_posix() + '_ifs'
+        background_fills.append({'Source': source, 'Offset': f.ifs_data.offset + f.start,
+            'Size': len(original), 'Output': f'{container}/afp/{name}', 'RgbOffsets': rgb_offsets,
+            'BeforeHash': hashlib.sha256(original).hexdigest().upper(),
+            'AfterHash': hashlib.sha256(patched).hexdigest().upper()})
 
 def labels(data):
     endian = '>' if data[:4] == b'GE2D' else '<'
@@ -92,6 +154,7 @@ for package in sorted((ROOT/'graphics/game_bg').glob('*.ifs')):
     add_package(package, 'background', lambda name, textures: True)
     obj = IFS(str(package))
     try:
+        add_background_fills(obj, package)
         tex = obj.tree.folders.get('tex')
         if tex:
             for f in tex.files.values():
@@ -142,6 +205,6 @@ add_package(ROOT/'graphics/ver06/game_effect.ifs', 'judgment', lambda name, tex:
 assert len({i['Output'] for i in items}) == len(items)
 assert not protected_outputs.intersection(i['Output'] for i in items), 'A required hit/cursor resource was selected'
 assert len({t['Output'] for t in black_textures}) == len(black_textures)
-catalog = {'Version': 2, 'GameIdentifier': 'KFC-6aa256e6_7ad708', 'Sources': list(sources.values()), 'Items': items, 'ProtectedOutputs': sorted(protected_outputs), 'BlackTextures': black_textures}
+catalog = {'Version': 2, 'GameIdentifier': 'KFC-6aa256e6_7ad708', 'Sources': list(sources.values()), 'Items': items, 'ProtectedOutputs': sorted(protected_outputs), 'BlackTextures': black_textures, 'BackgroundFills': background_fills}
 OUT.write_bytes(gzip.compress(json.dumps(catalog, separators=(',', ':')).encode('utf8'), mtime=0))
-print(json.dumps({'groups': stats, 'black_textures': len(black_textures), 'sources': len(sources), 'catalog_bytes': OUT.stat().st_size}))
+print(json.dumps({'groups': stats, 'black_textures': len(black_textures), 'background_fills': len(background_fills), 'sources': len(sources), 'catalog_bytes': OUT.stat().st_size}))

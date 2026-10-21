@@ -2,7 +2,13 @@
 
 Windows 图形工具：通过可恢复的 IFS LayeredFS 覆盖，减少指定 SDVX 版本的背景和装饰光效，同时保留按键命中与基本读谱信息。
 
-### v0.4 · USC 深黑
+### v0.4.1 · 深黑底色修复（覆盖更新）
+
+**上一版 v0.4.0 已收到用户实测反馈：背景没有变成深黑。** 原来的纹理生成测试只能证明覆盖文件有效，不能证明最终画面。检查资源发现，背景动画还存在独立的 AFP 底色，例如 dome 的普通/通关背景分别带有灰色底色；上一版没有处理它们。
+
+0.4.1 补充 300 个已启用底色的背景 AFP 覆盖，仅将 RGB 改为黑色，保留原透明度、标志、时间线和 BSI。不会给原本透明的粒子动画添加不透明背景。**修复构建仍需要实机复测，不能把静态校验当成效果确认。** 同一预览发布页和 ZIP 下载链接已用于替换发布；下载后检查窗口标题包含 `0.4.1`。
+
+已经启用旧版「USC 深黑」的用户：退出游戏和启动器，打开修复版读取模式，再点击「应用当前选择」。修复版会识别缺少的动画底色覆盖，即使选择未变化也会补齐，不再直接提示“模式没有变化”。
 
 参照 USC 视频的深黑背景与清晰读谱反馈，新增「USC 深黑」预设：隐藏舞台、减少旋钮尘粒、轨道泛光及动态装饰，同时保留判定文字、EARLY/LATE 和连击信息。新界面采用深黑底色、青色开关与轨道示意图，完整资源信息收进「详细信息」。预设只改变待应用选择，点击「应用当前选择」并确认后才写入游戏。
 
@@ -30,7 +36,7 @@ Windows 图形工具：通过可恢复的 IFS LayeredFS 覆盖，减少指定 SD
 | 分组 | 修改范围 |
 | --- | --- |
 | 背景 | 已识别的舞台、人物背景、背景粒子几何绘制 |
-| 深黑背景 | 已识别的曲目背景纹理，替换为同尺寸的不透明纯黑 PNG |
+| 深黑背景 | 4302 张纯黑背景纹理，以及 300 个背景 AFP 已有底色的 RGB 修复 |
 | 旋钮尘粒 | 指定旋钮尘粒动画 |
 | 轨道反光 | 指定轨道反光与 HUD 泛光 |
 | 额外装饰 | 旋钮周边光效、连击光束、HUD 动态装饰 |
@@ -50,7 +56,7 @@ Windows 图形工具：通过可恢复的 IFS LayeredFS 覆盖，减少指定 SD
 
 ## 备份与恢复
 
-原始游戏 IFS、音频、谱面和 DLL 不会被改写。生成的六组覆盖放在 `contents/data_mods/zzzz_sdvx_smooth_*`；停用后移至游戏目录 `.sdvx-smooth/effects-v2/disabled`，历史记录位于同目录的 `history`。旧版备份保留在 `effects-v1`，请勿手动复制回游戏。
+原始游戏 IFS、音频、谱面和 DLL 不会被改写。六个开关管理的覆盖放在 `contents/data_mods/zzzz_sdvx_smooth_*`；其中深黑开关共同控制 `black` 纹理组和新增的 `backdrop` 动画底色组。停用后移至游戏目录 `.sdvx-smooth/effects-v2/disabled`，历史记录位于同目录的 `history`。旧版备份保留在 `effects-v1`，请勿手动复制回游戏。
 
 启动设置修改前备份至 `.sdvx-smooth/backups`，支持完整恢复；若同一配置后来被其他程序修改，工具拒绝直接覆盖。更新游戏或遇到异常时先恢复原版，保留本地日志供排查。日志可能包含个人信息，请先脱敏再提交 Issue。
 
@@ -59,10 +65,10 @@ Windows 图形工具：通过可恢复的 IFS LayeredFS 覆盖，减少指定 SD
 需要 Windows 与 .NET 8 SDK：
 
 ```powershell
-dotnet publish -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -p:DebugType=None -o dist/usc-v0.4
-$app = Get-Item 'dist/usc-v0.4/SDVX特效精简-USC深黑.exe'
+dotnet publish -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -p:DebugType=None -o dist/usc-v0.4.1
+$app = Get-Item 'dist/usc-v0.4.1/SDVX特效精简-USC深黑.exe'
 $p = Start-Process -FilePath $app.FullName -ArgumentList '--self-test' -Wait -PassThru
-Get-Content dist/usc-v0.4/self-test.txt
+Get-Content dist/usc-v0.4.1/self-test.txt
 if ($p.ExitCode -ne 0) { throw 'Tests failed' }
 ```
 
@@ -74,6 +80,7 @@ if ($p.ExitCode -ne 0) { throw 'Tests failed' }
 py -m venv .venv
 .venv/Scripts/python -m pip install -r tools/requirements.txt
 .venv/Scripts/python tools/build_effect_catalog.py --game-root 'X:\Games\LAZY_KFC'
+.venv/Scripts/python tools/validate_background_fills.py --game-root 'X:\Games\LAZY_KFC'
 ```
 
 `LegacyEffectCatalog.json.gz` 和 `UnsafeEffectCatalog.json.gz` 仅用于识别、校验并停用历史覆盖。不要使用旧版生成算法。
